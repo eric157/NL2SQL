@@ -12,7 +12,7 @@ class DuckDBEngine:
 
     def get_connection(self):
         """Returns a read-only DuckDB connection."""
-        return duckdb.connect(self.db_path, read_only=False) # Write/Read as needed
+        return duckdb.connect(self.db_path, read_only=True)
 
     def execute_query(self, sql_str: str) -> Dict[str, Any]:
         """
@@ -134,5 +134,9 @@ class DuckDBEngine:
 
     def get_sample_rows(self, table_name: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Returns sample rows for a specified table."""
-        res = self.execute_query(f"SELECT * FROM {table_name} LIMIT {limit}")
+        schema = self.get_schema_metadata()
+        if table_name not in schema["tables"]:
+            return []
+        safe_limit = max(1, min(int(limit), 100))
+        res = self.execute_query(f'SELECT * FROM "{table_name}" LIMIT {safe_limit}')
         return res.get("rows", [])

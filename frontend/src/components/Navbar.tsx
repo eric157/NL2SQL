@@ -15,10 +15,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onReset
   const tabs = [
     { id: 'dashboard', label: 'Executive BI Center', icon: LayoutDashboard },
     { id: 'analyst', label: 'AI Analyst', icon: Bot },
-    { id: 'rootcause', label: 'Root Cause Diagnostics', icon: Sparkles },
-    { id: 'datamodel', label: 'Data Model & ERD', icon: Network },
-    { id: 'security', label: 'SQL Security', icon: ShieldCheck },
-    { id: 'history', label: 'Query History', icon: History }
+    { id: 'rootcause', label: 'Why did it change?', icon: Sparkles },
+    ...(isDevMode ? [
+      { id: 'datamodel', label: 'Data Model', icon: Network },
+      { id: 'security', label: 'Security Checks', icon: ShieldCheck },
+      { id: 'history', label: 'Query History', icon: History }
+    ] : [])
   ];
 
   return (

@@ -69,8 +69,8 @@ class SQLSecurityValidator:
         if statement is None:
             return False, clean_sql, "Failed to parse SQL AST."
 
-        # Check statement root type (Must be Select or With)
-        if not isinstance(statement, (exp.Select, exp.With)):
+        # Check statement root type (Must be a read-only SELECT, WITH, or set query)
+        if not isinstance(statement, (exp.Select, exp.With, exp.Union, exp.Intersect, exp.Except)):
             return False, clean_sql, f"Security Violation: Only SELECT or WITH queries are allowed. Got root statement type '{statement.key.upper()}'."
 
         # Walk AST to detect prohibited statement nodes
@@ -108,6 +108,10 @@ class SQLSecurityValidator:
             return ast_statement
 
         if isinstance(ast_statement, exp.Select):
+            ast_statement.args.pop("limit", None)
+            return ast_statement.limit(max_limit)
+
+        if isinstance(ast_statement, (exp.Union, exp.Intersect, exp.Except)):
             ast_statement.args.pop("limit", None)
             return ast_statement.limit(max_limit)
 

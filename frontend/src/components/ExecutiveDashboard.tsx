@@ -54,7 +54,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ onAskAI 
             Executive BI Command Center
           </h2>
           <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-            Real-time business performance overview powered by 9,994 transaction records in DuckDB.
+            A plain-English view of sales, customers, profit, and returns from 9,994 original transaction records.
           </p>
         </div>
 
@@ -111,7 +111,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ onAskAI 
               ${kpis.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
             <span style={{ fontSize: '0.75rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-              ↑ +12.4% YoY Growth
+              Live from the dataset
             </span>
           </div>
 
@@ -124,7 +124,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ onAskAI 
               {kpis.orders.toLocaleString()}
             </div>
             <span style={{ fontSize: '0.75rem', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-              5,009 Unique Orders
+              {kpis.orders.toLocaleString()} unique orders
             </span>
           </div>
 
@@ -137,7 +137,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ onAskAI 
               {kpis.customers.toLocaleString()}
             </div>
             <span style={{ fontSize: '0.75rem', color: '#818cf8', background: 'rgba(129, 140, 248, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-              793 Unique Customers
+              {kpis.customers.toLocaleString()} unique customers
             </span>
           </div>
 
@@ -174,7 +174,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ onAskAI 
               {kpis.return_rate_pct}%
             </div>
             <span style={{ fontSize: '0.75rem', color: '#f43f5e', background: 'rgba(244, 63, 94, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
-              400+ Product Returns
+              Derived return estimate
             </span>
           </div>
         </div>

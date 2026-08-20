@@ -70,6 +70,29 @@ class SemanticLayer:
         "order_date": "o.order_date"
     }
 
+    JARGON = {
+        "AOV / average basket size": "Total order revenue divided by distinct orders; aggregate to order level before averaging.",
+        "sales / revenue / turnover": "SUM(oi.line_total), not row count and not unit price.",
+        "profit / bottom line": "SUM(oi.line_profit).",
+        "margin / profitability": "Profit divided by revenue multiplied by 100; never use AVG of row margins.",
+        "buyers / active customers": "COUNT(DISTINCT o.customer_id) among customers with orders.",
+        "repeat buyer": "A customer with more than one distinct order.",
+        "basket quantity": "The quantity of units or line items within an order; state which one is used.",
+        "SKU / product": "A product master record identified by products.product_id.",
+        "returns / return rate": "The returns table is a derived estimate, not observed source data.",
+        "discount impact": "Compare profit margin across discount tiers; do not infer causality from correlation alone.",
+        "region / territory": "The regions.region_name dimension: Central, East, South, or West.",
+        "order value": "Revenue summed per order_id before calculating averages, medians, or percentiles.",
+        "line item": "One source transaction row represented by order_items.order_item_id."
+    }
+
+    FEW_SHOT_EXAMPLES = [
+        "Question: What is AOV by segment? Correct approach: aggregate SUM(oi.line_total) per order_id and segment, then average those order totals.",
+        "Question: Which category has the best margin? Correct approach: group revenue and profit, then calculate SUM(profit) / SUM(revenue) * 100.",
+        "Question: Are returns observed? Correct answer: no; returns are derived estimates because the source CSV has no return fields.",
+        "Question: What is a repeat buyer? Correct approach: COUNT(DISTINCT order_id) > 1 for a customer.",
+    ]
+
     @classmethod
     def get_semantic_prompt_context(cls) -> str:
         """Formulates concise semantic layer metadata string for LLM prompting."""
@@ -81,6 +104,13 @@ class SemanticLayer:
         for key, info in cls.METRICS.items():
             syn_str = ", ".join(info["synonyms"])
             lines.append(f"- **{info['name']}** (`{key}`): SQL = `{info['sql_expression']}` | Synonyms: [{syn_str}]")
+
+        lines.append("\n### BUSINESS JARGON TRANSLATION:")
+        for term, definition in cls.JARGON.items():
+            lines.append(f"- **{term}**: {definition}")
+
+        lines.append("\n### CORRECTNESS EXAMPLES:")
+        lines.extend(f"- {example}" for example in cls.FEW_SHOT_EXAMPLES)
         
         lines.append("\n### STANDARD JOIN STRUCTURE:")
         lines.append("""
@@ -93,3 +123,27 @@ class SemanticLayer:
         LEFT JOIN returns r ON oi.order_item_id = r.order_item_id
         """)
         return "\n".join(lines)
+
+    @classmethod
+    def get_schema_prompt_context(cls, schema_meta: Dict[str, Any]) -> str:
+        """Adds only live table and column names so the model cannot invent schema fields."""
+        lines = ["\n### LIVE DATABASE SCHEMA (USE ONLY THESE TABLES AND COLUMNS):"]
+        for table_name, table in schema_meta.get("tables", {}).items():
+            columns = ", ".join(column["name"] for column in table.get("columns", []))
+            lines.append(f"- {table_name}: {columns}")
+        lines.append("\n### SOURCE AND PROVENANCE RULES:")
+        lines.append("- The source has 9,994 order-item rows; do not call them 9,994 orders.")
+        lines.append("- The returns table is derived from discount/profit heuristics and must be labeled estimated.")
+        lines.append("- If a requested field is absent, say so instead of inventing it.")
+        return "\n".join(lines)
+
+    @classmethod
+    def detect_business_terms(cls, question: str) -> List[str]:
+        """Returns glossary concepts detected in a user question for transparent retrieval telemetry."""
+        lower_question = question.lower()
+        detected = []
+        for term in cls.JARGON:
+            aliases = term.lower().split(" /")
+            if any(alias.strip() in lower_question for alias in aliases):
+                detected.append(term)
+        return detected[:8]

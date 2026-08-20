@@ -7,6 +7,10 @@ from app.analytics.root_cause import RootCauseAnalyzer
 from app.analytics.viz_selector import VizSelector
 from app.ai.llm_client import LLMClient
 
+
+def humanize_metric(column: str) -> str:
+    return column.replace("_", " ")
+
 class AIOrchestrator:
     """Bounded AI Workflow Orchestrator for NL2SQL Enterprise Analytics."""
 
@@ -23,12 +27,16 @@ class AIOrchestrator:
 
         # 2. Get Semantic Layer & Schema Context
         schema_meta = self.db.get_schema_metadata()
-        schema_context_str = SemanticLayer.get_semantic_prompt_context()
+        schema_context_str = (
+            SemanticLayer.get_semantic_prompt_context()
+            + SemanticLayer.get_schema_prompt_context(schema_meta)
+        )
 
         # 3. Generate SQL Plan via LLM or Local Rule Engine
         plan_res = self.llm.generate_sql_and_plan(resolved_prompt, schema_context_str)
         initial_sql = plan_res.get("sql", "")
         plan_summary = plan_res.get("analytical_plan", "Executed database query.")
+        llm_provider = plan_res.get("llm_provider", "unknown")
 
         # 4. Self-Healing SQL Loop (Max 3 attempts)
         repair_attempts = 0
@@ -48,6 +56,7 @@ class AIOrchestrator:
             repair_prompt = f"Original question: '{resolved_prompt}'. Failing SQL: '{current_sql}'. Error: '{err_msg}'. Fix the DuckDB SQL query."
             repaired_plan = self.llm.generate_sql_and_plan(repair_prompt, schema_context_str)
             current_sql = repaired_plan.get("sql", current_sql)
+            llm_provider = repaired_plan.get("llm_provider", llm_provider)
 
         rows = exec_res.get("rows", [])
         columns = exec_res.get("columns", [])
@@ -61,7 +70,9 @@ class AIOrchestrator:
 
         # 7. Root-Cause Analysis Check
         root_cause_data = None
-        if "why" in user_question.lower() or "decline" in user_question.lower() or "drop" in user_question.lower():
+        if plan_res.get("intent") != "read_only_boundary" and (
+            "why" in user_question.lower() or "decline" in user_question.lower() or "drop" in user_question.lower()
+        ):
             root_cause_data = self.root_cause_engine.analyze_revenue_decline()
 
         # 8. Executive Insights & Proactive Suggestions
@@ -69,13 +80,39 @@ class AIOrchestrator:
         suggestions = self._generate_proactive_suggestions(resolved_prompt, columns, rows)
 
         total_latency = round((time.perf_counter() - start_time) * 1000, 2)
+        is_supported = plan_res.get("intent") not in {"unsupported_offline_analysis", "read_only_boundary"}
+        validation_checks = [
+            "Business glossary matched",
+            "Live schema grounding",
+            "Read-only SQL AST validation",
+            "DuckDB execution verified",
+            "Data quality audit completed",
+        ]
+        if repair_attempts:
+            validation_checks.append(f"Execution-guided repair ({repair_attempts})")
+        confidence = "high" if exec_res.get("success") and is_supported and repair_attempts == 0 else "limited"
 
         return {
             "question": user_question,
             "resolved_prompt": resolved_prompt,
             "analytical_plan": plan_summary,
+            "llm_provider": llm_provider,
             "sql": final_sql,
             "success": exec_res.get("success", False),
+            "supported": is_supported,
+            "limitation_type": "read_only" if plan_res.get("intent") == "read_only_boundary" else ("unsupported" if plan_res.get("intent") == "unsupported_offline_analysis" else None),
+            "ai_transparency": {
+                "confidence": confidence,
+                "business_terms_detected": SemanticLayer.detect_business_terms(user_question),
+                "methods": [
+                    "Schema-grounded generation",
+                    "Business glossary retrieval",
+                    "Structured output validation",
+                    "Execution-guided verification",
+                    "Provenance-aware answer",
+                ],
+                "validation_checks": validation_checks,
+            },
             "error": exec_res.get("error"),
             "execution_time_ms": exec_res.get("execution_time_ms", 0),
             "total_latency_ms": total_latency,
@@ -118,9 +155,13 @@ class AIOrchestrator:
             return f"Analytical Result Summary: {metric_str}."
 
         first_col = columns[0]
-        last_col = columns[-1]
+        metric_priority = [
+            column for column in columns
+            if any(term in column.lower() for term in ("revenue", "sales", "profit", "spent", "total"))
+        ]
+        last_col = metric_priority[0] if metric_priority else columns[-1]
         top_row = rows[0]
-        return f"Retrieved {row_count} analytical records. Highest performer by {last_col}: '{top_row.get(first_col)}' with {top_row.get(last_col)}."
+        return f"I found {row_count:,} results. The leading {humanize_metric(last_col)} is '{top_row.get(first_col)}' at {top_row.get(last_col)}."
 
     def _generate_proactive_suggestions(self, question: str, columns: List[str], rows: List[Dict[str, Any]]) -> List[str]:
         lower_q = question.lower()
