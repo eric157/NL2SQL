@@ -15,6 +15,9 @@ coverage.xml
 *.log
 .env
 .env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 data/raw/
 data/processed/
 data/cache/
@@ -33,3 +36,9 @@ analyst-redesign.png
 !data/processed/analytics.duckdb
 .DS_Store
 Thumbs.db
+
+.vercel
+.env*
+!.env.example
+!backend/.env.example
+!frontend/.env.example

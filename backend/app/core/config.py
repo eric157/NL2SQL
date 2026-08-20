@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # LLM Settings (Free tier / local friendly)
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     GEMINI_API_KEY: str = ""
     OLLAMA_HOST: str = "http://localhost:11434"
     LLM_MODEL: str = "mixtral-8x7b-32768"
