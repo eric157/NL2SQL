@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { API_BASE } from '../api';
 
 export const QueryHistoryView: React.FC = () => {
   const [logs, setLogs] = useState<any[]>([]);
@@ -10,7 +11,9 @@ export const QueryHistoryView: React.FC = () => {
 
   const loadHistory = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/history");
+      const res = await fetch(`${API_BASE}/history`, {
+        headers: { "X-Session-ID": window.localStorage.getItem('nl2sql-session-id') || '' }
+      });
       if (res.ok) {
         const data = await res.json();
         setLogs(data.history || []);

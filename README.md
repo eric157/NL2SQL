@@ -12,7 +12,7 @@ An AI-native Business Intelligence platform built on top of a real e-commerce an
    - Analytical Hierarchy: Executive KPIs → Revenue & Profit Trends → Regional Breakdown → Anomaly Alerts → Direct AI Investigation triggers.
 
 2. **Real Business Dataset**:
-   - Built on the official **Global Superstore Sales Dataset** (9,994 transaction line items, $2.3M+ sales, 1,862 products, 793 customers, 5,009 orders, 400+ returns).
+   - Built on the official **Global Superstore Sales Dataset** (9,994 source transaction line items, $2.3M+ sales, 1,862 products, 793 customers, and 5,009 orders). Return records are derived estimates because the source CSV has no returns field.
    - Normalized into 3NF relational schema inside **DuckDB** for `< 10ms` query execution.
 
 3. **Data Model / Relationship Explorer**:
@@ -81,6 +81,22 @@ python scripts/build_dataset.py
 cd backend
 python -m uvicorn app.main:app --reload --port 8000
 ```
+
+To use Groq for SQL planning, copy `backend/.env.example` to `backend/.env`, set `GROQ_API_KEY`, and restart the backend. Groq is tried first; if the request fails or no key is present, the app falls back to the local rule engine.
+
+### Deploy to Vercel
+
+Vercel is the recommended deployment because it can host both the React frontend and FastAPI backend under one origin:
+
+1. Import this repository into Vercel with the repository root as the project root.
+2. Add `GROQ_API_KEY` and optionally `GROQ_MODEL` under Vercel Project Settings > Environment Variables. Never add the key to frontend variables or source files.
+3. Deploy. The frontend uses same-origin `/api` routes automatically.
+
+The source CSV and DuckDB database are included for the serverless deployment. The database is read-only at runtime.
+
+### Deploy the frontend to GitHub Pages
+
+GitHub Pages cannot run FastAPI, DuckDB, or protect a Groq key. Deploy the backend separately, then set the GitHub Pages build variable `VITE_API_BASE_URL` to that backend's public URL. Put `GROQ_API_KEY` only in the backend host's secret environment variables.
 
 ### 3. Launch Vite Frontend
 ```bash

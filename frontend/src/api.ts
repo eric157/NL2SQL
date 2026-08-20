@@ -25,8 +25,17 @@ export interface ChatResponse {
   question: string;
   resolved_prompt: string;
   analytical_plan: string;
+  llm_provider?: 'groq' | 'gemini' | 'local-rule-engine' | 'unknown';
   sql: string;
   success: boolean;
+  supported?: boolean;
+  limitation_type?: 'read_only' | 'unsupported';
+  ai_transparency?: {
+    confidence: 'high' | 'limited';
+    business_terms_detected: string[];
+    methods: string[];
+    validation_checks: string[];
+  };
   error?: string;
   execution_time_ms: number;
   total_latency_ms: number;
@@ -98,7 +107,16 @@ export interface SchemaMetadata {
   }[];
 }
 
-const API_BASE = "http://localhost:8000/api";
+export const API_BASE = `${import.meta.env.VITE_API_BASE_URL || ""}/api`.replace(/\/\/api$/, "/api");
+
+function getSessionId(): string {
+  const key = 'nl2sql-session-id';
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  window.localStorage.setItem(key, created);
+  return created;
+}
 
 export async function fetchDashboard(region?: string, category?: string): Promise<DashboardData> {
   const params = new URLSearchParams();
@@ -114,7 +132,7 @@ export async function sendChatQuery(question: string, history: { question: strin
   const formattedHistory = history.map(h => ({ question: h.question, answer: h.answer }));
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Session-ID": getSessionId() },
     body: JSON.stringify({ question, history: formattedHistory })
   });
   if (!res.ok) throw new Error("AI Analyst query failed");

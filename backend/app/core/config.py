@@ -11,10 +11,12 @@ class Settings(BaseSettings):
     DB_PATH: str = os.path.join(DATA_DIR, "analytics.duckdb")
 
     # LLM Settings (Free tier / local friendly)
-    GROQ_API_KEY: str = "REDACTED_GROQ_KEY"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GEMINI_API_KEY: str = ""
     OLLAMA_HOST: str = "http://localhost:11434"
     LLM_MODEL: str = "mixtral-8x7b-32768"
+    FRONTEND_ORIGIN: str = ""
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

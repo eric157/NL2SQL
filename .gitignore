@@ -19,10 +19,17 @@ data/raw/
 data/processed/
 data/cache/
 !data/.gitkeep
+!data/raw/
+!data/processed/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/raw/superstore.csv
+!data/processed/analytics.duckdb
+.playwright-mcp/
+analyst-redesign.png
 !data/cache/.gitkeep
 *.duckdb
 *.duckdb.wal
+!data/processed/analytics.duckdb
 .DS_Store
 Thumbs.db

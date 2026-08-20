@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import time
@@ -19,8 +19,8 @@ app = FastAPI(
 # Enable CORS for Vite frontend / Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[settings.FRONTEND_ORIGIN] if settings.FRONTEND_ORIGIN else ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,7 +31,7 @@ ai_orchestrator = AIOrchestrator(db_engine)
 root_cause_engine = RootCauseAnalyzer(db_engine)
 
 # Live Query History Log in memory
-QUERY_HISTORY_LOG: List[Dict[str, Any]] = []
+QUERY_HISTORY_LOG: Dict[str, List[Dict[str, Any]]] = {}
 
 class ChatRequest(BaseModel):
     question: str
@@ -51,7 +51,7 @@ def root():
         "app": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "docs": "/docs",
-        "dataset": "Global Superstore Sales Dataset (9,994 line items)"
+        "dataset": "Global Superstore Sales Dataset (9,994 source line items); return records are derived estimates"
     }
 
 @app.get("/api/dashboard")
@@ -63,10 +63,13 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     conn = db_engine.get_connection()
 
     where_clauses = []
+    filter_params: List[str] = []
     if region and region != "All":
-        where_clauses.append(f"reg.region_name = '{region}'")
+        where_clauses.append("reg.region_name = ?")
+        filter_params.append(region)
     if category and category != "All":
-        where_clauses.append(f"c.category_name = '{category}'")
+        where_clauses.append("c.category_name = ?")
+        filter_params.append(category)
 
     filter_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -88,7 +91,7 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     LEFT JOIN returns r ON oi.order_item_id = r.order_item_id
     {filter_sql};
     """
-    kpi_res = conn.execute(kpi_sql).fetchone()
+    kpi_res = conn.execute(kpi_sql, filter_params).fetchone()
     
     kpis = {
         "revenue": kpi_res[0] or 0.0,
@@ -115,7 +118,7 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     GROUP BY order_month
     ORDER BY order_month ASC;
     """
-    trend_rows = conn.execute(trend_sql).fetchall()
+    trend_rows = conn.execute(trend_sql, filter_params).fetchall()
     monthly_trends = [
         {"month": r[0], "revenue": float(r[1] or 0), "profit": float(r[2] or 0)}
         for r in trend_rows
@@ -136,7 +139,7 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     GROUP BY reg.region_name
     ORDER BY revenue DESC;
     """
-    region_rows = conn.execute(region_sql).fetchall()
+    region_rows = conn.execute(region_sql, filter_params).fetchall()
     regional_breakdown = [
         {"region": r[0], "revenue": float(r[1] or 0), "orders": int(r[2] or 0)}
         for r in region_rows
@@ -157,7 +160,7 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     GROUP BY c.category_name
     ORDER BY revenue DESC;
     """
-    category_rows = conn.execute(category_sql).fetchall()
+    category_rows = conn.execute(category_sql, filter_params).fetchall()
     category_breakdown = [
         {"category": r[0], "revenue": float(r[1] or 0), "profit": float(r[2] or 0)}
         for r in category_rows
@@ -220,7 +223,7 @@ def get_executive_dashboard(region: Optional[str] = None, category: Optional[str
     }
 
 @app.post("/api/chat")
-def handle_chat_query(req: ChatRequest):
+def handle_chat_query(req: ChatRequest, x_session_id: Optional[str] = Header(default=None)):
     """Executes AI Analyst pipeline with NL2SQL generation, security validation, and business insights."""
     if not req.question or not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
@@ -229,8 +232,10 @@ def handle_chat_query(req: ChatRequest):
 
     # Record in history log
     timestamp = time.strftime("%H:%M:%S")
-    QUERY_HISTORY_LOG.insert(0, {
-        "id": len(QUERY_HISTORY_LOG) + 1,
+    session_id = x_session_id or "anonymous"
+    session_history = QUERY_HISTORY_LOG.setdefault(session_id, [])
+    session_history.insert(0, {
+        "id": len(session_history) + 1,
         "time": timestamp,
         "question": req.question,
         "sql": result.get("sql", ""),
@@ -242,9 +247,9 @@ def handle_chat_query(req: ChatRequest):
     return result
 
 @app.get("/api/history")
-def get_query_history():
+def get_query_history(x_session_id: Optional[str] = Header(default=None)):
     """Returns real execution log of questions asked during this session."""
-    return {"history": QUERY_HISTORY_LOG[:50]}
+    return {"history": QUERY_HISTORY_LOG.get(x_session_id or "anonymous", [])[:50]}
 
 @app.get("/api/schema")
 def get_database_schema():
@@ -254,11 +259,11 @@ def get_database_schema():
 @app.get("/api/schema/table/{table_name}")
 def get_table_details(table_name: str):
     """Returns sample rows and schema definition for a specific table."""
-    sample_rows = db_engine.get_sample_rows(table_name, limit=10)
     meta = db_engine.get_schema_metadata()
     table_meta = meta["tables"].get(table_name)
     if not table_meta:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found.")
+    sample_rows = db_engine.get_sample_rows(table_name, limit=10)
     return {
         "table": table_meta,
         "sample_rows": sample_rows
