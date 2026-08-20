@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import Dict, Any, Optional
 import httpx
 from app.core.config import settings
@@ -116,7 +117,7 @@ Translate the user's business jargon using the glossary, use only live schema fi
         Comprehensive Rule Engine for 100% offline / free-tier execution.
         Handles 20+ common natural language business queries, typos, and edge cases.
         """
-        lower_p = prompt.lower().strip()
+        lower_p = self._normalize_business_language(prompt)
 
         if any(w in lower_p for w in ["drop table", "delete data", "delete all", "truncate table", "update records", "insert into", "alter table"]):
             return {
@@ -235,6 +236,56 @@ Translate the user's business jargon using the glossary, use only live schema fi
                 SELECT ROUND(CORR(discount, line_profit), 4) AS discount_profit_correlation,
                        COUNT(*) AS line_item_count
                 FROM order_items;
+                """
+            }
+
+        if "repeat buyers" in lower_p or "repeat customers" in lower_p:
+            return {
+                "intent": "repeat_customers",
+                "analytical_plan": "List customers with more than one distinct order, ranked by order count.",
+                "sql": """
+                SELECT cust.customer_id, cust.customer_name, COUNT(DISTINCT o.order_id) AS order_count,
+                       ROUND(SUM(oi.line_total), 2) AS total_revenue
+                FROM customers cust JOIN orders o ON cust.customer_id = o.customer_id JOIN order_items oi ON o.order_id = oi.order_id
+                GROUP BY cust.customer_id, cust.customer_name HAVING COUNT(DISTINCT o.order_id) > 1
+                ORDER BY order_count DESC, total_revenue DESC;
+                """
+            }
+
+        if "profit margin" in lower_p and "region" in lower_p:
+            return {
+                "intent": "regional_profit_margin",
+                "analytical_plan": "Calculate total revenue, profit, and profit margin for each region, ranked by margin.",
+                "sql": """
+                SELECT reg.region_name, ROUND(SUM(oi.line_total), 2) AS total_revenue,
+                       ROUND(SUM(oi.line_profit), 2) AS total_profit,
+                       ROUND(SUM(oi.line_profit) * 100.0 / NULLIF(SUM(oi.line_total), 0), 2) AS profit_margin_pct
+                FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN regions reg ON o.region_id = reg.region_id
+                GROUP BY reg.region_name ORDER BY profit_margin_pct DESC;
+                """
+            }
+
+        if "all orders" in lower_p and "technology" in lower_p:
+            return {
+                "intent": "technology_orders",
+                "analytical_plan": "List orders containing at least one Technology product.",
+                "sql": """
+                SELECT DISTINCT o.order_id, o.customer_id, o.order_date, o.ship_date, o.ship_mode
+                FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+                JOIN products p ON oi.product_id = p.product_id JOIN categories c ON p.category_id = c.category_id
+                WHERE c.category_name = 'Technology' ORDER BY o.order_date DESC;
+                """
+            }
+
+        if "shipping" in lower_p and ("fastest" in lower_p or "cheapest" in lower_p):
+            return {
+                "intent": "shipping_speed_cost_proxy",
+                "analytical_plan": "Compare shipping modes by average delivery days and label revenue as the available cost proxy.",
+                "sql": """
+                SELECT o.ship_mode, ROUND(AVG(DATE_DIFF('day', o.order_date, o.ship_date)), 2) AS average_ship_days,
+                       COUNT(DISTINCT o.order_id) AS order_count, ROUND(SUM(oi.line_total), 2) AS revenue_proxy
+                FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+                GROUP BY o.ship_mode ORDER BY average_ship_days ASC, revenue_proxy ASC;
                 """
             }
 
@@ -392,6 +443,92 @@ Translate the user's business jargon using the glossary, use only live schema fi
                 SELECT COUNT(*) AS total_orders, SUM(has_high_discount) AS high_discount_orders,
                        ROUND(SUM(has_high_discount) * 100.0 / NULLIF(COUNT(*), 0), 2) AS order_share_pct
                 FROM order_flags;
+                """
+            }
+
+        if "percent" in lower_p and "sales" in lower_p and "negative profit" in lower_p:
+            return {
+                "intent": "negative_profit_revenue_share",
+                "analytical_plan": "Calculate the percentage of source revenue represented by line items with negative profit.",
+                "sql": """
+                SELECT ROUND(SUM(CASE WHEN line_profit < 0 THEN line_total ELSE 0 END), 2) AS negative_profit_revenue,
+                       ROUND(SUM(line_total), 2) AS total_revenue,
+                       ROUND(SUM(CASE WHEN line_profit < 0 THEN line_total ELSE 0 END) * 100.0 / NULLIF(SUM(line_total), 0), 2) AS revenue_share_pct
+                FROM order_items;
+                """
+            }
+
+        if "correlation" in lower_p:
+            return {
+                "intent": "discount_profit_correlation",
+                "analytical_plan": "Calculate Pearson correlation between line-item discount and profit using source transaction rows.",
+                "sql": "SELECT ROUND(CORR(discount, line_profit), 4) AS discount_profit_correlation, COUNT(*) AS line_item_count FROM order_items;"
+            }
+
+        if "95th percentile" in lower_p:
+            return {
+                "intent": "order_value_percentile",
+                "analytical_plan": "Calculate order-level revenue and the exact 95th percentile for each region.",
+                "sql": """
+                WITH order_values AS (
+                    SELECT o.order_id, reg.region_name, SUM(oi.line_total) AS order_value
+                    FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN regions reg ON o.region_id = reg.region_id
+                    GROUP BY o.order_id, reg.region_name
+                )
+                SELECT region_name, ROUND(QUANTILE_CONT(order_value, 0.95), 2) AS p95_order_value
+                FROM order_values GROUP BY region_name ORDER BY p95_order_value DESC;
+                """
+            }
+
+        if "retention" in lower_p or "repeat purchase rate" in lower_p:
+            return {
+                "intent": "customer_retention",
+                "analytical_plan": "Measure customer retention as the percentage of customers with more than one distinct order.",
+                "sql": """
+                WITH customer_orders AS (
+                    SELECT customer_id, COUNT(DISTINCT order_id) AS order_count FROM orders GROUP BY customer_id
+                )
+                SELECT COUNT(*) AS active_customers, SUM(CASE WHEN order_count > 1 THEN 1 ELSE 0 END) AS repeat_customers,
+                       ROUND(SUM(CASE WHEN order_count > 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS retention_pct
+                FROM customer_orders;
+                """
+            }
+
+        if "line items per order" in lower_p:
+            return {
+                "intent": "line_items_per_order",
+                "analytical_plan": "Calculate the average number of source line items per distinct order.",
+                "sql": """
+                SELECT COUNT(*) AS line_item_count, COUNT(DISTINCT order_id) AS order_count,
+                       ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS average_line_items_per_order
+                FROM order_items;
+                """
+            }
+
+        if "average basket size" in lower_p and "home office" in lower_p:
+            return {
+                "intent": "segment_aov",
+                "analytical_plan": "Aggregate revenue at order level and calculate average basket size for Home Office customers.",
+                "sql": """
+                WITH order_values AS (
+                    SELECT o.order_id, SUM(oi.line_total) AS order_value
+                    FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN customers cust ON o.customer_id = cust.customer_id
+                    WHERE cust.segment = 'Home Office' GROUP BY o.order_id
+                )
+                SELECT 'Home Office' AS segment, ROUND(AVG(order_value), 2) AS average_order_value FROM order_values;
+                """
+            }
+
+        if "more than 1 order" in lower_p or "more than one order" in lower_p:
+            return {
+                "intent": "repeat_customers",
+                "analytical_plan": "List customers with more than one distinct order, ranked by order count.",
+                "sql": """
+                SELECT cust.customer_id, cust.customer_name, COUNT(DISTINCT o.order_id) AS order_count,
+                       ROUND(SUM(oi.line_total), 2) AS total_revenue
+                FROM customers cust JOIN orders o ON cust.customer_id = o.customer_id JOIN order_items oi ON o.order_id = oi.order_id
+                GROUP BY cust.customer_id, cust.customer_name HAVING COUNT(DISTINCT o.order_id) > 1
+                ORDER BY order_count DESC, total_revenue DESC;
                 """
             }
 
@@ -695,3 +832,22 @@ Translate the user's business jargon using the glossary, use only live schema fi
             ORDER BY total_revenue DESC;
             """
         }
+
+    @staticmethod
+    def _normalize_business_language(prompt: str) -> str:
+        """Normalizes frequent hurried typos without changing the original user question."""
+        replacements = {
+            "revnue": "revenue", "dropp": "drop", "quartar": "quarter", "regon": "region", "montly": "monthly",
+            "profitt": "profit", "profitz": "profits", "averge": "average", "avrage": "average",
+            "ordar": "order", "valur": "value", "valu": "value", "custmer": "customer",
+            "custmers": "customers", "segmant": "segment", "buyres": "buyers", "prodcts": "products",
+            "salez": "sales", "retension": "retention", "percintile": "percentile", "technolgy": "technology",
+            "catagory": "category", "shiping": "shipping", "cheepest": "cheapest", "offce": "office",
+            "itms": "items", "subcat": "sub-category", "hiest": "highest", "retur": "return",
+            "wut": "what", "neg": "negative", "evry": "every", "discout": "discount",
+            "calclate": "calculate", "corrolation": "correlation", "then": "than"
+        }
+        normalized = prompt.lower().strip()
+        for typo, correction in replacements.items():
+            normalized = re.sub(rf"\b{re.escape(typo)}\b", correction, normalized)
+        return normalized

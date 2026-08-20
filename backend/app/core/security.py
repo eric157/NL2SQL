@@ -108,6 +108,13 @@ class SQLSecurityValidator:
             return ast_statement
 
         if isinstance(ast_statement, exp.Select):
+            limit = ast_statement.args.get("limit")
+            if limit is None:
+                return ast_statement.limit(max_limit)
+            limit_value = limit.expression
+            if isinstance(limit_value, exp.Literal) and limit_value.is_int:
+                if int(limit_value.this) <= max_limit:
+                    return ast_statement
             ast_statement.args.pop("limit", None)
             return ast_statement.limit(max_limit)
 
