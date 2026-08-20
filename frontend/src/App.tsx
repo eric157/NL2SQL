@@ -11,6 +11,7 @@ import { QueryHistoryView } from './components/QueryHistoryView';
 export function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [targetQuestion, setTargetQuestion] = useState<string>('');
+  const [isDevMode, setIsDevMode] = useState<boolean>(false);
 
   const handleAskAIFromDashboard = (question: string) => {
     setTargetQuestion(question);
@@ -24,13 +25,19 @@ export function App() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#090d16', color: '#f8fafc' }}>
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} onReset={handleResetSession} />
+      <Navbar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        onReset={handleResetSession} 
+        isDevMode={isDevMode}
+        setIsDevMode={setIsDevMode}
+      />
       
       <main style={{ paddingBottom: '3rem' }}>
         {activeTab === 'dashboard' && <ExecutiveDashboard onAskAI={handleAskAIFromDashboard} />}
-        {activeTab === 'analyst' && <AIAnalystView initialQuestion={targetQuestion} />}
-        {activeTab === 'datamodel' && <DataModelView />}
+        {activeTab === 'analyst' && <AIAnalystView initialQuestion={targetQuestion} isDevMode={isDevMode} />}
         {activeTab === 'rootcause' && <RootCauseView />}
+        {activeTab === 'datamodel' && <DataModelView />}
         {activeTab === 'security' && <SecurityAuditView />}
         {activeTab === 'history' && <QueryHistoryView />}
       </main>
