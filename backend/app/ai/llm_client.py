@@ -395,6 +395,36 @@ Translate the user's business jargon using the glossary, use only live schema fi
                 """
             }
 
+        if "profit margin" in lower_p and ("aov" in lower_p or "average order value" in lower_p):
+            return {
+                "intent": "region_margin_and_aov",
+                "analytical_plan": "Compare region-level profit margin with order-level average order value in one result.",
+                "sql": """
+                WITH order_values AS (
+                    SELECT o.order_id, reg.region_name, SUM(oi.line_total) AS order_value
+                    FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+                    JOIN regions reg ON o.region_id = reg.region_id
+                    GROUP BY o.order_id, reg.region_name
+                ), region_metrics AS (
+                    SELECT reg.region_name,
+                           SUM(oi.line_total) AS revenue,
+                           SUM(oi.line_profit) AS profit,
+                           COUNT(DISTINCT o.order_id) AS orders
+                    FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+                    JOIN regions reg ON o.region_id = reg.region_id
+                    GROUP BY reg.region_name
+                )
+                SELECT m.region_name,
+                       ROUND(m.revenue, 2) AS total_revenue,
+                       ROUND(m.profit, 2) AS total_profit,
+                       ROUND(m.profit * 100.0 / NULLIF(m.revenue, 0), 2) AS profit_margin_pct,
+                       ROUND(AVG(v.order_value), 2) AS average_order_value
+                FROM region_metrics m JOIN order_values v ON m.region_name = v.region_name
+                GROUP BY m.region_name, m.revenue, m.profit, m.orders
+                ORDER BY profit_margin_pct DESC;
+                """
+            }
+
         # 2. Why revenue decline / drop / variance
         if any(w in lower_p for w in ["why", "decline", "drop", "decreased", "fell", "down", "variance"]):
             return {
